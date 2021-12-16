@@ -1,0 +1,5 @@
+venv/*
+rnn_torchviz.png
+saved_model.pth
+submission.csv
+rnn_torchviz
