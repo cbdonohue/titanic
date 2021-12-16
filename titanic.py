@@ -13,51 +13,196 @@ from sklearn.model_selection import train_test_split
 from torchviz import make_dot
 from sklearn.impute import SimpleImputer
 
-df = pd.read_csv('train.csv')
-df.drop(['Name', 'Ticket', 'Cabin'], inplace=True, axis=1)
+class TitanicNN:
+  BATCH_SIZE = 32
+  FEATURES = ['Age', 'Fare','Sex_female', 'Sex_male', 'Pclass_1',	'Pclass_2',	'Pclass_3', 'SibSp', 'SibSp', 'Embarked_C', 'Embarked_Q', 'Embarked_S']
 
-df.isna().sum()
+  def __init__(self):
 
-imp = SimpleImputer(missing_values=np.nan, strategy='mean')
-imp.fit(df['Age'].values.reshape(-1, 1))
-df['Age'] = imp.transform(df['Age'].values.reshape(-1, 1))
+    self.load_data()
+    self.impute()
+    self.clean()
+    self.one_hot()
+    self.split()
+    self.scale()
+    self.transform()
+    self.model = NeuralNetwork(len(TitanicNN.FEATURES))
+    self.cuda()
+    self.dataload()
+    self.train()
+    self.test()
+    self.pred()
+    self.submit()
 
-df.isna().sum()
+  def dataload(self):
+    self.train_dataset = TitanicDataset(self.X_train, self.y_train)
+    self.titanic_train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=self.BATCH_SIZE, shuffle=True)
+    self.valid_dataset = TitanicDataset(self.X_valid, self.y_valid)
+    self.titanic_valid_loader = torch.utils.data.DataLoader(self.valid_dataset, batch_size=self.BATCH_SIZE, shuffle=True)
+    self.test_dataset = TitanicDataset(self.X_test)
+    self.titanic_test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.BATCH_SIZE, shuffle=True)
 
-df.dropna(inplace=True)
+  def cuda(self):
+    self.model.cuda()
+    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    self.model.to(self.device)
 
-df = pd.get_dummies(df, columns={'Sex'})
-df = pd.get_dummies(df, columns={'Pclass'})
-df = pd.get_dummies(df, columns={'Embarked'})
-df.head()
+  def load_data(self):
+    self.train_data = pd.read_csv('train.csv')
+    self.train_data.drop(['Name', 'Ticket', 'Cabin'], inplace=True, axis=1)
 
-features = ['Age', 'Fare','Sex_female', 'Sex_male', 'Pclass_1',	'Pclass_2',	'Pclass_3', 'SibSp', 'SibSp', 'Embarked_C', 'Embarked_Q', 'Embarked_S']
+    self.test_data = pd.read_csv('test.csv')
+    self.test_data.drop(['Name', 'Ticket', 'Cabin'], inplace=True, axis=1)
+    self.test_data = self.test_data
 
-X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=['Survived']), df['Survived'], test_size=0.2, random_state=1)
+  def impute(self):
+    imp = SimpleImputer(missing_values=np.nan, strategy='mean')
+    imp.fit(self.train_data['Age'].values.reshape(-1, 1))
+    self.train_data['Age'] = imp.transform(self.train_data['Age'].values.reshape(-1, 1))
 
-age_scaler = RobustScaler()
-age_scaler.fit(X_train['Age'].values.reshape(-1, 1))
-X_train['Age'] = pd.DataFrame(age_scaler.transform(X_train['Age'].values.reshape(-1, 1)), index=X_train.index)
+    imp = SimpleImputer(missing_values=np.nan, strategy='mean')
+    imp.fit(self.test_data['Age'].values.reshape(-1, 1))
+    self.test_data['Age'] = imp.transform(self.test_data['Age'].values.reshape(-1, 1))
 
-sibsp_scaler = RobustScaler()
-sibsp_scaler.fit(X_train['SibSp'].values.reshape(-1, 1))
-X_train['SibSp'] = pd.DataFrame(sibsp_scaler.transform(X_train['SibSp'].values.reshape(-1, 1)), index=X_train.index)
+  def clean(self):
+    self.train_data.dropna(inplace=True)
 
-parch_scaler = RobustScaler()
-parch_scaler.fit(X_train['Parch'].values.reshape(-1, 1))
-X_train['Parch'] = pd.DataFrame(parch_scaler.transform(X_train['Parch'].values.reshape(-1, 1)), index=X_train.index)
+  def one_hot(self):
+    self.train_data = pd.get_dummies(self.train_data, columns={'Sex'})
+    self.train_data = pd.get_dummies(self.train_data, columns={'Pclass'})
+    self.train_data = pd.get_dummies(self.train_data, columns={'Embarked'})
 
-fare_scaler = RobustScaler()
-fare_scaler.fit(X_train['Fare'].values.reshape(-1, 1))
-X_train['Fare'] = pd.DataFrame(fare_scaler.transform(X_train['Fare'].values.reshape(-1, 1)), index=X_train.index)
+    self.test_data = pd.get_dummies(self.test_data, columns={'Sex'})
+    self.test_data = pd.get_dummies(self.test_data, columns={'Pclass'})
+    self.test_data = pd.get_dummies(self.test_data, columns={'Embarked'})
 
-X_test['Age'] = pd.DataFrame(age_scaler.transform(X_test['Age'].values.reshape(-1, 1)), index=X_test.index)
+  def split(self):
+      self.X_train, self.X_valid, self.y_train, self.y_valid = \
+        train_test_split(self.train_data.drop(columns=['Survived']), self.train_data['Survived'], test_size=0.2, random_state=1)
+      self.X_test = self.test_data
 
-X_test['SibSp'] = pd.DataFrame(sibsp_scaler.transform(X_test['SibSp'].values.reshape(-1, 1)), index=X_test.index)
+  def scale(self):
+    self.age_scaler = RobustScaler()
+    self.age_scaler.fit(self.X_train['Age'].values.reshape(-1, 1))
+    self.X_train['Age'] = pd.DataFrame(self.age_scaler.transform(self.X_train['Age'].values.reshape(-1, 1)), index=self.X_train.index)
 
-X_test['Parch'] = pd.DataFrame(parch_scaler.transform(X_test['Parch'].values.reshape(-1, 1)), index=X_test.index)
+    self.sibsp_scaler = RobustScaler()
+    self.sibsp_scaler.fit(self.X_train['SibSp'].values.reshape(-1, 1))
+    self.X_train['SibSp'] = pd.DataFrame(self.sibsp_scaler.transform(self.X_train['SibSp'].values.reshape(-1, 1)), index=self.X_train.index)
 
-X_test['Fare'] = pd.DataFrame(fare_scaler.transform(X_test['Fare'].values.reshape(-1, 1)), index=X_test.index)
+    self.parch_scaler = RobustScaler()
+    self.parch_scaler.fit(self.X_train['Parch'].values.reshape(-1, 1))
+    self.X_train['Parch'] = pd.DataFrame(self.parch_scaler.transform(self.X_train['Parch'].values.reshape(-1, 1)), index=self.X_train.index)
+
+    self.fare_scaler = RobustScaler()
+    self.fare_scaler.fit(self.X_train['Fare'].values.reshape(-1, 1))
+    self.X_train['Fare'] = pd.DataFrame(self.fare_scaler.transform(self.X_train['Fare'].values.reshape(-1, 1)), index=self.X_train.index)
+
+  def transform(self):
+    self.X_valid['Fare'] = pd.DataFrame(self.fare_scaler.transform(self.X_valid['Fare'].values.reshape(-1, 1)), index=self.X_valid.index)
+    self.X_valid['Age'] = pd.DataFrame(self.age_scaler.transform(self.X_valid['Age'].values.reshape(-1, 1)), index=self.X_valid.index)
+    self.X_valid['SibSp'] = pd.DataFrame(self.sibsp_scaler.transform(self.X_valid['SibSp'].values.reshape(-1, 1)), index=self.X_valid.index)
+    self.X_valid['Parch'] = pd.DataFrame(self.parch_scaler.transform(self.X_valid['Parch'].values.reshape(-1, 1)), index=self.X_valid.index)
+
+    self.X_test['Age'] = pd.DataFrame(self.age_scaler.transform(self.X_test['Age'].values.reshape(-1, 1)), index=self.X_test.index)
+    self.X_test['SibSp'] = pd.DataFrame(self.sibsp_scaler.transform(self.X_test['SibSp'].values.reshape(-1, 1)), index=self.X_test.index)
+    self.X_test['Parch'] = pd.DataFrame(self.parch_scaler.transform(self.X_test['Parch'].values.reshape(-1, 1)), index=self.X_test.index)
+    self.X_test['Fare'] = pd.DataFrame(self.fare_scaler.transform(self.X_test['Fare'].values.reshape(-1, 1)), index=self.X_test.index)
+
+  def train(self):
+    learning_rate = .001
+    optimizer = torch.optim.SGD(self.model.parameters(), lr=learning_rate)
+    epochs = 30
+    criterion = nn.MSELoss()
+    min_valid_loss = np.inf
+
+    valid_losses = list()
+    train_losses = list()
+
+    for epoch in range(epochs):
+      train_loss = 0.0
+      # enumerate mini batches
+      for i, (inputs, targets) in enumerate(self.titanic_train_loader):
+        inputs, targets = inputs.to(self.device), targets.to(self.device)
+        # clear the gradients
+        optimizer.zero_grad()
+        # compute the model output
+        yhat = self.model(inputs)
+        # calculate loss
+        loss = criterion(yhat, targets)
+        # credit assignment
+        loss.backward()
+        # update model weights
+        optimizer.step()
+        # Calculate Loss
+        train_loss += loss.item()
+
+      valid_loss = 0.0
+      self.model.eval()     # Optional when not using Model Specific layer
+      for data, labels in self.titanic_valid_loader:
+        if torch.cuda.is_available():
+            data, labels = data.cuda(), labels.cuda()
+        target = self.model(data)
+        loss = criterion(target,labels)
+        valid_loss = loss.item() * data.size(0)
+
+      print(f'Epoch {epoch+1} \t\t Training Loss: {train_loss / len(self.titanic_test_loader)} \t\t Validation Loss: {valid_loss / len(self.titanic_test_loader)}')
+      train_losses.append(train_loss)
+      valid_losses.append(valid_loss)
+
+      if min_valid_loss > valid_loss:
+        print(f'Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss:.6f}) \t Saving The Model')
+        min_valid_loss = valid_loss
+        # Saving State Dict
+        torch.save(self.model.state_dict(), 'saved_model.pth')
+
+  def test(self):
+    self.model.load_state_dict(torch.load('saved_model.pth'))
+    self.model.eval()
+
+  def pred(self):
+    self.preds = list()
+    for data in self.titanic_test_loader:
+      if torch.cuda.is_available():
+          data = data.cuda()
+      target = self.model(data)
+      self.preds =self.preds + target.tolist()
+  
+  def submit(self):
+    def func(i):
+      return i[0]
+    self.preds = list(map(lambda i:func(i), self.preds))
+    result = pd.DataFrame(index = self.test_data['PassengerId'])
+    result['Survived'] = pd.DataFrame(self.preds, index=result.index)
+    result['Survived'] = np.where(result['Survived'] < .5, 0, 1)
+    result.to_csv('submission.csv')
+
+class NeuralNetwork(nn.Module):
+  loss_fn = nn.MSELoss()
+  batch_size = 32
+  min_valid_loss = np.inf
+  
+  def __init__(self, num_features):
+    super(NeuralNetwork, self).__init__()
+
+    self.num_features = num_features
+
+    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    #self.flatten = nn.Flatten()
+    self.double()
+    self.linear_relu_stack = nn.Sequential(
+        nn.Linear(num_features, 512),
+        nn.ReLU(),
+        nn.Linear(512, 512),
+        nn.ReLU(),
+        nn.Linear(512, 1),
+    )
+
+  def forward(self, x):
+      #x = self.flatten(x)
+      logits = self.linear_relu_stack(x)
+      return logits
 
 class TitanicDataset(Dataset):
     def __init__(self, x, y=None):
@@ -70,144 +215,11 @@ class TitanicDataset(Dataset):
     def __getitem__(self, idx):
       if self.y is None:
         return \
-              torch.tensor(self.x.iloc[idx][features]).float()
+              torch.tensor(self.x.iloc[idx][TitanicNN.FEATURES]).float()
       else:
         return \
-              torch.tensor(self.x.iloc[idx][features]).float(), \
+              torch.tensor(self.x.iloc[idx][TitanicNN.FEATURES]).float(), \
               torch.tensor([self.y.iloc[idx]]).float()
 
-BATCH_SIZE = 32
-
-train_dataset = TitanicDataset(X_train, y_train)
-
-titanic_train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-
-test_dataset = TitanicDataset(X_test, y_test)
-
-titanic_test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True)
-
-class NeuralNetwork(nn.Module):
-    def __init__(self):
-        super(NeuralNetwork, self).__init__()
-        #self.flatten = nn.Flatten()
-        self.double()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(len(features), 512),
-            nn.ReLU(),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Linear(512, 1),
-        )
-
-    def forward(self, x):
-        #x = self.flatten(x)
-        logits = self.linear_relu_stack(x)
-        return logits
-
-model = NeuralNetwork()
-model
-
-loss_fn = nn.MSELoss()
-learning_rate = .001
-batch_size = 32
-epochs = 30
-optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
-min_valid_loss = np.inf
-
-X_train.tail()
-
-criterion = nn.MSELoss()
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-model.to(device)
-
-valid_losses = list()
-train_losses = list()
-
-for epoch in range(epochs):
-    train_loss = 0.0
-    # enumerate mini batches
-    for i, (inputs, targets) in enumerate(titanic_train_loader):
-        inputs, targets = inputs.to(device), targets.to(device)
-        # clear the gradients
-        optimizer.zero_grad()
-        # compute the model output
-        yhat = model(inputs)
-        # calculate loss
-        loss = criterion(yhat, targets)
-        # credit assignment
-        loss.backward()
-        # update model weights
-        optimizer.step()
-        # Calculate Loss
-        train_loss += loss.item()
-
-    valid_loss = 0.0
-    model.eval()     # Optional when not using Model Specific layer
-    for data, labels in titanic_test_loader:
-        if torch.cuda.is_available():
-            data, labels = data.cuda(), labels.cuda()
-        target = model(data)
-        loss = criterion(target,labels)
-        valid_loss = loss.item() * data.size(0)
-
-    print(f'Epoch {epoch+1} \t\t Training Loss: {train_loss / len(titanic_test_loader)} \t\t Validation Loss: {valid_loss / len(titanic_test_loader)}')
-    train_losses.append(train_loss)
-    valid_losses.append(valid_loss)
-
-    if min_valid_loss > valid_loss:
-        print(f'Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss:.6f}) \t Saving The Model')
-        min_valid_loss = valid_loss
-        # Saving State Dict
-        torch.save(model.state_dict(), 'saved_model.pth')
-
-plt.plot(valid_losses, label='validation loss')
-plt.plot(train_losses, label='training loss')
-plt.xlabel('epoch')
-plt.ylabel('loss')
-plt.legend()
-
-df = pd.read_csv('test.csv')
-df.drop(['Name', 'Ticket', 'Cabin'], inplace=True, axis=1)
-
-df = pd.get_dummies(df, columns={'Sex'})
-df = pd.get_dummies(df, columns={'Pclass'})
-df = pd.get_dummies(df, columns={'Embarked'})
-
-df['Age'] = pd.DataFrame(age_scaler.transform(df['Age'].values.reshape(-1, 1)), index=df.index)
-df['SibSp'] = pd.DataFrame(sibsp_scaler.transform(df['SibSp'].values.reshape(-1, 1)), index=df.index)
-df['Parch'] = pd.DataFrame(parch_scaler.transform(df['Parch'].values.reshape(-1, 1)), index=df.index)
-df['Fare'] = pd.DataFrame(fare_scaler.transform(df['Fare'].values.reshape(-1, 1)), index=df.index)
-
-imp = SimpleImputer(missing_values=np.nan, strategy='mean')
-imp.fit(df['Age'].values.reshape(-1, 1))
-df['Age'] = imp.transform(df['Age'].values.reshape(-1, 1))
-
-df.tail()
-
-df.tail()
-
-test_dataset = TitanicDataset(df)
-titanic_test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True)
-
-model = NeuralNetwork().cuda()
-model.load_state_dict(torch.load('saved_model.pth'))
-model.eval()
-
-preds = list()
-for data in titanic_test_loader:
-  if torch.cuda.is_available():
-      data, labels = data.cuda(), labels.cuda()
-  target = model(data)
-  preds = preds + target.tolist()
-preds[:10]
-
-def func(i):
-  return i[0]
-preds = list(map(lambda i:func(i), preds))
-result = pd.DataFrame(index = df['PassengerId'])
-result['Survived'] = pd.DataFrame(preds, index=result.index)
-result['Survived'] = np.where(result['Survived'] < .5, 0, 1)
-result.to_csv('submission.csv')
-
-make_dot(yhat, params=dict(list(model.named_parameters()))).render("rnn_torchviz", format="png")
+if __name__ == '__main__':
+    nn = TitanicNN()
