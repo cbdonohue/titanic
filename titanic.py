@@ -13,11 +13,22 @@ from sklearn.model_selection import train_test_split
 from torchviz import make_dot
 from sklearn.impute import SimpleImputer
 
-class TitanicNN:
-  BATCH_SIZE = 32
+
+class TitanicNN(nn.Module):
   FEATURES = ['Age', 'Fare','Sex_female', 'Sex_male', 'Pclass_1',	'Pclass_2',	'Pclass_3', 'SibSp', 'SibSp', 'Embarked_C', 'Embarked_Q', 'Embarked_S']
+  BATCH_SIZE = 32
 
   def __init__(self):
+    super(TitanicNN, self).__init__()
+
+    self.double()
+    self.linear_relu_stack = nn.Sequential(
+        nn.Linear(len(self.FEATURES), 512),
+        nn.ReLU(),
+        nn.Linear(512, 512),
+        nn.ReLU(),
+        nn.Linear(512, 1),
+    )
 
     self.load_data()
     self.impute()
@@ -26,7 +37,6 @@ class TitanicNN:
     self.split()
     self.scale()
     self.transform()
-    self.model = NeuralNetwork(len(TitanicNN.FEATURES))
     self.cuda()
     self.dataload()
     self.train()
@@ -43,9 +53,9 @@ class TitanicNN:
     self.titanic_test_loader = torch.utils.data.DataLoader(self.test_dataset, batch_size=self.BATCH_SIZE, shuffle=True)
 
   def cuda(self):
-    self.model.cuda()
+    self.cuda()
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    self.model.to(self.device)
+    self.to(self.device)
 
   def load_data(self):
     self.train_data = pd.read_csv('train.csv')
@@ -111,7 +121,7 @@ class TitanicNN:
 
   def train(self):
     learning_rate = .001
-    optimizer = torch.optim.SGD(self.model.parameters(), lr=learning_rate)
+    optimizer = torch.optim.SGD(self.parameters(), lr=learning_rate)
     epochs = 30
     criterion = nn.MSELoss()
     min_valid_loss = np.inf
@@ -127,7 +137,7 @@ class TitanicNN:
         # clear the gradients
         optimizer.zero_grad()
         # compute the model output
-        yhat = self.model(inputs)
+        yhat = self(inputs)
         # calculate loss
         loss = criterion(yhat, targets)
         # credit assignment
@@ -138,11 +148,11 @@ class TitanicNN:
         train_loss += loss.item()
 
       valid_loss = 0.0
-      self.model.eval()     # Optional when not using Model Specific layer
+      self.eval()     # Optional when not using Model Specific layer
       for data, labels in self.titanic_valid_loader:
         if torch.cuda.is_available():
             data, labels = data.cuda(), labels.cuda()
-        target = self.model(data)
+        target = self(data)
         loss = criterion(target,labels)
         valid_loss = loss.item() * data.size(0)
 
@@ -154,18 +164,18 @@ class TitanicNN:
         print(f'Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss:.6f}) \t Saving The Model')
         min_valid_loss = valid_loss
         # Saving State Dict
-        torch.save(self.model.state_dict(), 'saved_model.pth')
+        torch.save(self.state_dict(), 'saved_model.pth')
 
   def test(self):
-    self.model.load_state_dict(torch.load('saved_model.pth'))
-    self.model.eval()
+    self.load_state_dict(torch.load('saved_model.pth'))
+    self.eval()
 
   def pred(self):
     self.preds = list()
     for data in self.titanic_test_loader:
       if torch.cuda.is_available():
           data = data.cuda()
-      target = self.model(data)
+      target = self(data)
       self.preds =self.preds + target.tolist()
   
   def submit(self):
@@ -176,28 +186,6 @@ class TitanicNN:
     result['Survived'] = pd.DataFrame(self.preds, index=result.index)
     result['Survived'] = np.where(result['Survived'] < .5, 0, 1)
     result.to_csv('submission.csv')
-
-class NeuralNetwork(nn.Module):
-  loss_fn = nn.MSELoss()
-  batch_size = 32
-  min_valid_loss = np.inf
-  
-  def __init__(self, num_features):
-    super(NeuralNetwork, self).__init__()
-
-    self.num_features = num_features
-
-    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    #self.flatten = nn.Flatten()
-    self.double()
-    self.linear_relu_stack = nn.Sequential(
-        nn.Linear(num_features, 512),
-        nn.ReLU(),
-        nn.Linear(512, 512),
-        nn.ReLU(),
-        nn.Linear(512, 1),
-    )
 
   def forward(self, x):
       #x = self.flatten(x)
